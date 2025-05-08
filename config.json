@@ -1,0 +1,5 @@
+{
+  "domains": ["../ticket"],
+  "outputDir": "./reports",
+  "maxConcurrentRequests": 5
+}
