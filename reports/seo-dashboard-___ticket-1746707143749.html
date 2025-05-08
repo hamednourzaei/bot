@@ -1,0 +1,58 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SEO Dashboard - ../ticket</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h1 { text-align: center; color: #2c3e50; }
+    canvas { max-width: 600px; margin: 20px auto; }
+  </style>
+</head>
+<body>
+  <h1>SEO Dashboard for ../ticket</h1>
+  <canvas id="issuesChart"></canvas>
+  <canvas id="vitalsChart"></canvas>
+  <script>
+    const issuesData = {
+      labels: ['Broken Links', 'Meta Issues', 'Core Web Vitals', 'Keyword Issues'],
+      datasets: [{
+        label: 'Issues Count',
+        data: [
+          0,
+          0,
+          0,
+          0
+        ],
+        backgroundColor: ['#e74c3c', '#f39c12', '#8e44ad', '#3498db']
+      }]
+    };
+    const vitalsData = {
+      labels: ['LCP', 'FID', 'CLS'],
+      datasets: [{
+        label: 'Core Web Vitals (Avg)',
+        data: [
+          0,
+          0,
+          0
+        ],
+        backgroundColor: ['#9b59b6', '#3498db', '#e74c3c']
+      }]
+    };
+    new Chart(document.getElementById('issuesChart'), {
+      type: 'bar',
+      data: issuesData,
+      options: { scales: { y: { beginAtZero: true } } }
+    });
+    new Chart(document.getElementById('vitalsChart'), {
+      type: 'bar',
+      data: vitalsData,
+      options: { scales: { y: { beginAtZero: true } } }
+    });
+  </script>
+</body>
+</html>
+    

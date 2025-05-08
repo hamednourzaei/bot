@@ -48,7 +48,7 @@ if (!fs.existsSync(config.outputDir)) {
   fs.mkdirSync(config.outputDir, { recursive: true });
 }
 
-// سیستم کش ساده
+// سیستم کش ساده (موقتاً غیرفعال برای تست)
 const cacheFile = path.join(config.outputDir, "scan-cache.json");
 const loadCache = () =>
   fs.existsSync(cacheFile)
@@ -92,15 +92,28 @@ const limitConcurrency = (tasks, limit) => {
   });
 };
 
-// بررسی اینکه آیا مسیر مجاز است (فقط src و public)
+// بررسی اینکه آیا مسیر مجاز است (شامل زیرپوشه‌ها)
 function isAllowedPath(filePath, domain) {
   const allowedFolders = [
     path.join(domain, "src"),
     path.join(domain, "public"),
   ];
-  return allowedFolders.some(
-    (folder) => filePath.startsWith(folder + path.sep) || filePath === folder
-  );
+  return allowedFolders.some((folder) => filePath.startsWith(folder));
+}
+
+// تابع بازگشتی برای اسکن فایل‌ها
+function scanFilesRecursively(dir, filesList = []) {
+  const files = fs.readdirSync(dir);
+  files.forEach((file) => {
+    const filePath = path.join(dir, file);
+    const stat = fs.statSync(filePath);
+    if (stat.isDirectory()) {
+      scanFilesRecursively(filePath, filesList);
+    } else if (isAllowedPath(filePath, domain)) {
+      filesList.push(filePath);
+    }
+  });
+  return filesList;
 }
 
 // تحلیل معنایی (LSI و Long-Tail Keywords)
@@ -114,7 +127,6 @@ function analyzeSemanticKeywords(filePath, content) {
     const tokenizer = new natural.WordTokenizer();
     const words = tokenizer.tokenize(text);
 
-    // شناسایی کلمات کلیدی LSI (ساده)
     const tfidf = new natural.TfIdf();
     tfidf.addDocument(words);
     const lsiKeywords = [];
@@ -132,7 +144,6 @@ function analyzeSemanticKeywords(filePath, content) {
         }
       });
 
-    // شناسایی عبارات کلیدی طولانی
     const ngramTokenizer = new natural.NGramTokenizer({ min: 2, max: 4 });
     const ngrams = ngramTokenizer.tokenize(text);
     const longTailKeywords = ngrams.filter(
@@ -163,7 +174,6 @@ function analyzeCoreWebVitals(filePath, content) {
     const images = $("img[src]").length;
     const cssFiles = $('link[rel="stylesheet"]').length;
 
-    // شبیه‌سازی LCP (Largest Contentful Paint)
     const lcpEstimate = images * 100 + scripts * 50 + cssFiles * 30;
     if (lcpEstimate > 2500) {
       results.coreWebVitals.push({
@@ -174,7 +184,6 @@ function analyzeCoreWebVitals(filePath, content) {
       });
     }
 
-    // شبیه‌سازی FID (First Input Delay)
     const fidEstimate = scripts * 10;
     if (fidEstimate > 100) {
       results.coreWebVitals.push({
@@ -185,7 +194,6 @@ function analyzeCoreWebVitals(filePath, content) {
       });
     }
 
-    // شبیه‌سازی CLS (Cumulative Layout Shift)
     const clsEstimate = $("img:not([width]):not([height])").length * 0.1;
     if (clsEstimate > 0.1) {
       results.coreWebVitals.push({
@@ -562,7 +570,7 @@ function checkSchema(filePath, content) {
   try {
     const $ = cheerio.load(content);
     const jsonLd = $('script[type="application/ld+json"]');
-    const microdata = $("[ ascope]");
+    const microdata = $("[itemscope]");
     if (jsonLd.length === 0 && microdata.length === 0) {
       results.schemaIssues.push({
         file: filePath,
@@ -1056,10 +1064,9 @@ async function runInteractiveCLI() {
 async function scanDomain(domain, scans) {
   let files = [];
   let allContents = {};
-  const cache = loadCache();
 
   try {
-    // فقط پوشه‌های src و public را اسکن می‌کنیم
+    // اسکن بازگشتی پوشه‌های src و public
     const allowedFolders = [
       path.join(domain, "src"),
       path.join(domain, "public"),
@@ -1067,79 +1074,59 @@ async function scanDomain(domain, scans) {
     files = [];
     allowedFolders.forEach((folder) => {
       if (fs.existsSync(folder)) {
-        files.push(
-          ...fs.readdirSync(folder).map((file) => path.join(folder, file))
-        );
+        files.push(...scanFilesRecursively(folder));
       }
     });
 
     const tasks = files.map((file) => async () => {
-      let filePath = file;
-      const stat = fs.statSync(filePath);
+      const stat = fs.statSync(file);
 
-      // فقط مسیرهای مجاز (src و public)
-      if (!isAllowedPath(filePath, domain)) return;
+      if (!isAllowedPath(file, domain)) return;
 
       if (stat.isDirectory()) {
-        await scanDomain(filePath, scans);
+        await scanDomain(file, scans);
         return;
       }
 
-      // چک کردن کش
-      const fileHash = require("crypto")
-        .createHash("md5")
-        .update(fs.readFileSync(filePath))
-        .digest("hex");
-      if (cache[filePath] && cache[filePath].hash === fileHash) {
-        console.log(`Skipping unchanged file: ${filePath}`);
-        Object.keys(cache[filePath].results).forEach((key) => {
-          results[key].push(...cache[filePath].results[key]);
-        });
-        return;
-      }
-
-      // خواندن محتوا
       let content;
       try {
-        content = fs.readFileSync(filePath, "utf-8");
+        content = fs.readFileSync(file, "utf-8");
       } catch (error) {
-        console.error(`Error reading file ${filePath}: ${error.message}`);
+        console.error(`Error reading file ${file}: ${error.message}`);
         return;
       }
 
-      console.log(`Scanning: ${filePath}`);
-      if (scans.includes("Broken Links")) await checkLinks(filePath, content);
-      if (scans.includes("Headings")) checkHeadings(filePath, content);
-      if (scans.includes("Meta Tags")) checkMetaTags(filePath, content);
-      if (scans.includes("Social Meta Tags"))
-        checkSocialMetaTags(filePath, content);
-      if (scans.includes("Images")) checkImages(filePath, content);
-      if (scans.includes("Accessibility"))
-        checkAccessibility(filePath, content);
-      if (scans.includes("Duplicate Content"))
-        allContents[filePath] = await checkDuplicateContent(
-          filePath,
-          content,
-          allContents
-        );
-      if (scans.includes("Schema")) checkSchema(filePath, content);
-      if (
-        scans.includes("Page Profiles") ||
-        scans.includes("Keyword Opportunities") ||
-        scans.includes("Semantic Keywords") ||
-        scans.includes("Core Web Vitals")
-      ) {
-        generatePageProfile(filePath, content);
-      }
-      if (scans.includes("Readability")) checkReadability(filePath, content);
+      const ext = path.extname(file).toLowerCase();
+      console.log(`Scanning: ${file}`);
 
-      // ذخیره در کش
-      cache[filePath] = { hash: fileHash, results: {} };
-      Object.keys(results).forEach((key) => {
-        cache[filePath].results[key] = results[key].filter(
-          (r) => r.file === filePath
-        );
-      });
+      if ([".html", ".htm"].includes(ext)) {
+        if (scans.includes("Broken Links")) await checkLinks(file, content);
+        if (scans.includes("Headings")) checkHeadings(file, content);
+        if (scans.includes("Meta Tags")) checkMetaTags(file, content);
+        if (scans.includes("Social Meta Tags"))
+          checkSocialMetaTags(file, content);
+        if (scans.includes("Images")) checkImages(file, content);
+        if (scans.includes("Accessibility")) checkAccessibility(file, content);
+        if (scans.includes("Duplicate Content"))
+          allContents[file] = await checkDuplicateContent(
+            file,
+            content,
+            allContents
+          );
+        if (scans.includes("Schema")) checkSchema(file, content);
+        if (
+          scans.includes("Page Profiles") ||
+          scans.includes("Keyword Opportunities") ||
+          scans.includes("Semantic Keywords") ||
+          scans.includes("Core Web Vitals")
+        ) {
+          generatePageProfile(file, content);
+        }
+        if (scans.includes("Readability")) checkReadability(file, content);
+      } else if ([".js", ".tsx", ".ts"].includes(ext)) {
+        console.log(`JS/TS file detected: ${file} (Add custom logic here)`);
+        // می‌توانید اینجا منطق خاصی برای تحلیل فایل‌های جاوااسکریپت/تایپ‌اسکریپت اضافه کنید
+      }
     });
 
     await limitConcurrency(tasks, config.maxConcurrentRequests);
@@ -1153,8 +1140,6 @@ async function scanDomain(domain, scans) {
     }
     if (scans.includes("Robots.txt")) checkRobotsTxt(domain);
     if (scans.includes("Sitemap")) checkSitemap(domain);
-
-    saveCache(cache);
   } catch (error) {
     console.error(`Error scanning domain ${domain}: ${error.message}`);
   }
