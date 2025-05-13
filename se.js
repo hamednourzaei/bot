@@ -1,87 +1,17 @@
-const fs = require("fs");
-const path = require("path");
-const cheerio = require("cheerio");
-const axios = require("axios");
-const PDFDocument = require("pdfkit");
-const xml2js = require("xml2js");
-const inquirer = require("inquirer");
-const schedule = require("node-schedule");
-const natural = require("natural");
 
-// تنظیمات اولیه
-const defaultConfig = {
-  outputDir: "./reports",
-  maxConcurrentRequests: 5,
-  domains: ["../ticket"],
-  schedule: "0 0 * * *", // اسکن روزانه ساعت 00:00
-};
-const config = fs.existsSync("./config.json")
-  ? {
-      ...defaultConfig,
-      ...JSON.parse(fs.readFileSync("./config.json", "utf-8")),
-    }
-  : defaultConfig;
-
-const results = {
-  brokenLinks: [],
-  headingIssues: [],
-  metaIssues: [],
-  imageIssues: [],
-  urlIssues: [],
-  robotsIssues: [],
-  sitemapIssues: [],
-  keywordIssues: [],
-  socialMetaIssues: [],
-  duplicateContent: [],
-  schemaIssues: [],
   clickDepthIssues: [],
   readabilityIssues: [],
   accessibilityIssues: [],
   pageProfiles: [],
   keywordOpportunities: [],
   semanticKeywords: [],
-  coreWebVitals: [],
-};
-
-// ایجاد پوشه خروجی
-if (!fs.existsSync(config.outputDir)) {
-  fs.mkdirSync(config.outputDir, { recursive: true });
-}
-
-// سیستم کش ساده (موقتاً غیرفعال برای تست)
-const cacheFile = path.join(config.outputDir, "scan-cache.json");
-const loadCache = () =>
-  fs.existsSync(cacheFile)
-    ? JSON.parse(fs.readFileSync(cacheFile, "utf-8"))
-    : {};
-const saveCache = (data) =>
-  fs.writeFileSync(cacheFile, JSON.stringify(data, null, 2));
-
-// محدود کردن درخواست‌های همزمان
-const limitConcurrency = (tasks, limit) => {
+  asks, limit) => {
   let active = 0;
   let index = 0;
   const results = [];
   const queue = [];
 
-  const next = async () => {
-    if (active >= limit || index >= tasks.length) return;
-    active++;
-    const task = tasks[index++];
-    queue.push(
-      task()
-        .then((res) => {
-          results.push(res);
-          active--;
-          next();
-        })
-        .catch((err) => {
-          results.push({ error: err });
-          active--;
-          next();
-        })
-    );
-    next();
+  
   };
 
   return new Promise((resolve) => {
@@ -92,28 +22,7 @@ const limitConcurrency = (tasks, limit) => {
   });
 };
 
-// بررسی اینکه آیا مسیر مجاز است (شامل زیرپوشه‌ها)
-function isAllowedPath(filePath, domain) {
-  const allowedFolders = [
-    path.join(domain, "src"),
-    path.join(domain, "public"),
-  ];
-  return allowedFolders.some((folder) => filePath.startsWith(folder));
-}
-
-// تابع بازگشتی برای اسکن فایل‌ها
-function scanFilesRecursively(dir, filesList = []) {
-  const files = fs.readdirSync(dir);
-  files.forEach((file) => {
-    const filePath = path.join(dir, file);
-    const stat = fs.statSync(filePath);
-    if (stat.isDirectory()) {
-      scanFilesRecursively(filePath, filesList);
-    } else if (isAllowedPath(filePath, domain)) {
-      filesList.push(filePath);
-    }
-  });
-  return filesList;
+// بررسی اینکه آیا مسیر مجاز است (شامل زیرپوشه‌;
 }
 
 // تحلیل معنایی (LSI و Long-Tail Keywords)
